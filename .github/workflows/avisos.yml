@@ -1,0 +1,46 @@
+name: Avisos
+
+# Cada 15 minutos le pide a la app que revise si hay avisos para mandar
+# (resumen de las 8:00, montajes, tareas 30 min antes, eventos de mañana).
+# La dirección y la clave están en los secretos del repo: acá no hay datos.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+    # GitHub apaga los crons de repos públicos tras 60 días sin actividad:
+    # una vez por mes se hace un commit vacío para mantenerlo vivo.
+    - cron: "37 12 1 * *"
+  workflow_dispatch:
+
+concurrency:
+  group: avisos
+  cancel-in-progress: false
+
+jobs:
+  avisos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Revisar avisos
+        env:
+          AVISOS_URL: ${{ secrets.AVISOS_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          code=$(curl -sS -o respuesta.json -w "%{http_code}" --max-time 90 --retry 2 --retry-delay 10 \
+            -H "Authorization: Bearer $CRON_SECRET" "$AVISOS_URL")
+          echo "HTTP $code"
+          cat respuesta.json; echo
+          test "$code" = "200"
+
+  mantener-vivo:
+    if: github.event.schedule == '37 12 1 * *'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "Mantener el cron activo"
+          git push
